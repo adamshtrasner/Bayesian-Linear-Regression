@@ -12,7 +12,7 @@ def polynomial_basis_functions(degree: int) -> Callable:
     """
     def pbf(x: np.ndarray):
         # <your code here>
-        return None
+        return np.vander(x/degree, degree+1, increasing=True)
     return pbf
 
 
@@ -58,7 +58,8 @@ def learn_prior(hours: np.ndarray, temps: np.ndarray, basis_func: Callable) -> t
     for i, t in enumerate(temps):
         ln = LinearRegression(basis_func).fit(hours, t)
         # todo <your code here>
-        thetas.append(None)  # append learned parameters here
+        ln.predict(hours)
+        thetas.append(ln.estimators)  # append learned parameters here
 
     thetas = np.array(thetas)
 
@@ -79,7 +80,14 @@ class BayesianLinearRegression:
         :param basis_functions:     a function that receives data points as inputs and returns a design matrix
         """
         # <your code here>
-        pass
+        self.theta_mean = theta_mean
+        self.theta_cov = theta_cov
+        self.sig = sig
+        self.basis_functions = basis_functions
+        self.prior = np.random.multivariate_normal(theta_mean, theta_cov)
+        self.posterior_mean = None
+        self.posterior_cov = None
+        self.posterior = None
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'BayesianLinearRegression':
         """
@@ -89,6 +97,14 @@ class BayesianLinearRegression:
         :return: the fitted model
         """
         # <your code here>
+        H = self.basis_functions(X)
+        M = self.sig * np.identity(y.shape[0]) + H @ self.theta_cov @ H.T
+        term = self.theta_cov @ H.T @ np.linalg.inv(M)
+
+        self.posterior_mean = self.theta_mean + term @ (y - H @ self.theta_mean)
+        self.posterior_cov = self.theta_cov - term @ H @ self.theta_cov
+
+        self.posterior = np.random.multivariate_normal(self.posterior_mean, self.posterior_cov)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -97,8 +113,8 @@ class BayesianLinearRegression:
         :param X: the samples to predict
         :return: the predictions for X
         """
-        # <your code here>
-        return None
+        y_pred = self.basis_functions(X) @ self.posterior_mean
+        return y_pred
 
     def fit_predict(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
@@ -117,7 +133,9 @@ class BayesianLinearRegression:
         :return: a numpy array with the standard deviations (same shape as X)
         """
         # <your code here>
-        return None
+        H = self.basis_functions(X)
+        std_pred = [h.T @ self.posterior_cov @ h + self.sig for h in H]
+        return np.sqrt(std_pred)
 
     def posterior_sample(self, X: np.ndarray) -> np.ndarray:
         """
@@ -126,7 +144,8 @@ class BayesianLinearRegression:
         :return: the predictions for X
         """
         # <your code here>
-        return None
+        y_pred = self.basis_functions(X) @ self.posterior
+        return y_pred
 
 
 class LinearRegression:
@@ -137,6 +156,8 @@ class LinearRegression:
         :param basis_functions:     a function that receives data points as inputs and returns a design matrix
         """
         # <your code here>
+        self.basis_functions = basis_functions
+        self.estimators = None
         pass
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'LinearRegression':
@@ -147,7 +168,10 @@ class LinearRegression:
         :return: the fitted model
         """
         # <your code here>
-        return None
+        H = self.basis_functions(X)
+        H_dagger = np.linalg.pinv(H)
+        self.estimators = H_dagger @ y
+        return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -156,7 +180,8 @@ class LinearRegression:
         :return: the predictions for X
         """
         # <your code here>
-        return None
+        y_pred = self.basis_functions(X) @ self.estimators
+        return y_pred
 
     def fit_predict(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
@@ -186,10 +211,24 @@ def main():
         ln = LinearRegression(polynomial_basis_functions(d)).fit(train_hours, train)
 
         # print average squared error performance
-        print(f'Average squared error with LR and d={d} is {np.mean((test - ln.predict(test_hours))**2):.2f}')
+        pred = ln.predict(test_hours)
+        ase = np.mean((test - pred)**2)
+        print(f'Average squared error with LR and d={d} is {ase:.2f}')
 
         # plot graphs for linear regression part
         # <your code here>
+        plt.figure()
+        tr = plt.scatter(train_hours, train)
+        ts = plt.scatter(test_hours, test)
+        plt.legend((tr, ts),
+                   ('train', 'test'),
+                   loc='upper left',
+                   fontsize=8)
+        plt.plot(test_hours, pred, lw=2, color="black")
+        plt.title(f'Temperatures on Second Half of November 16 2020\n d={d}, ASE={ase}')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
 
     # ----------------------------------------- Bayesian Linear Regression
 
@@ -222,35 +261,43 @@ def main():
 
         # plot prior graphs
         # <your code here>
+        plt.figure()
+        for i in range(temps.shape[0]):
+            plt.plot(hours, temps[i, :], lw=2)
+        # plt.plot(hours, mu, lw=2, legend='mean')
+        plt.title('Daily Average Temperatures in November')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
 
         # plot posterior graphs
         # <your code here>
 
-    # ---------------------- Gaussian basis functions
-    for ind, c in enumerate(centers):
-        rbf = gaussian_basis_functions(c, beta)
-        mu, cov = learn_prior(hours, temps, rbf)
-
-        blr = BayesianLinearRegression(mu, cov, sigma, rbf)
-
-        # plot prior graphs
-        # <your code here>
-
-        # plot posterior graphs
-        # <your code here>
-
-    # ---------------------- cubic regression splines
-    for ind, k in enumerate(knots):
-        spline = spline_basis_functions(k)
-        mu, cov = learn_prior(hours, temps, spline)
-
-        blr = BayesianLinearRegression(mu, cov, sigma, spline)
-
-        # plot prior graphs
-        # <your code here>
-
-        # plot posterior graphs
-        # <your code here>
+    # # ---------------------- Gaussian basis functions
+    # for ind, c in enumerate(centers):
+    #     rbf = gaussian_basis_functions(c, beta)
+    #     mu, cov = learn_prior(hours, temps, rbf)
+    #
+    #     blr = BayesianLinearRegression(mu, cov, sigma, rbf)
+    #
+    #     # plot prior graphs
+    #     # <your code here>
+    #
+    #     # plot posterior graphs
+    #     # <your code here>
+    #
+    # # ---------------------- cubic regression splines
+    # for ind, k in enumerate(knots):
+    #     spline = spline_basis_functions(k)
+    #     mu, cov = learn_prior(hours, temps, spline)
+    #
+    #     blr = BayesianLinearRegression(mu, cov, sigma, spline)
+    #
+    #     # plot prior graphs
+    #     # <your code here>
+    #
+    #     # plot posterior graphs
+    #     # <your code here>
 
 
 if __name__ == '__main__':
