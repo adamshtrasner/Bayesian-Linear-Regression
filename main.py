@@ -25,8 +25,9 @@ def gaussian_basis_functions(centers: np.ndarray, beta: float) -> Callable:
              Gaussian basis functions, a numpy array of shape [N, len(centers)+1]
     """
     def gbf(x: np.ndarray):
-        # <your code here>
-        return None
+        H = np.concatenate([np.exp(-((x[:, None] - c)**2)/(2*(beta**2))) for c in centers], axis=1)
+        intercept = np.ones(H.shape[0])[:, None]
+        return np.concatenate((intercept, H), axis=1)
     return gbf
 
 
@@ -57,8 +58,7 @@ def learn_prior(hours: np.ndarray, temps: np.ndarray, basis_func: Callable) -> t
     # iterate over all past years
     for i, t in enumerate(temps):
         ln = LinearRegression(basis_func).fit(hours, t)
-        # todo <your code here>
-        ln.predict(hours)
+        # todo <your code here>'
         thetas.append(ln.estimators)  # append learned parameters here
 
     thetas = np.array(thetas)
@@ -84,7 +84,6 @@ class BayesianLinearRegression:
         self.theta_cov = theta_cov
         self.sig = sig
         self.basis_functions = basis_functions
-        self.prior = np.random.multivariate_normal(theta_mean, theta_cov)
         self.posterior_mean = None
         self.posterior_cov = None
         self.posterior = None
@@ -104,7 +103,6 @@ class BayesianLinearRegression:
         self.posterior_mean = self.theta_mean + term @ (y - H @ self.theta_mean)
         self.posterior_cov = self.theta_cov - term @ H @ self.theta_cov
 
-        self.posterior = np.random.multivariate_normal(self.posterior_mean, self.posterior_cov)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -134,8 +132,8 @@ class BayesianLinearRegression:
         """
         # <your code here>
         H = self.basis_functions(X)
-        std_pred = [h.T @ self.posterior_cov @ h + self.sig for h in H]
-        return np.sqrt(std_pred)
+        std_pred = np.sqrt(np.diagonal(H @ self.posterior_cov @ H.T) + self.sig)
+        return std_pred
 
     def posterior_sample(self, X: np.ndarray) -> np.ndarray:
         """
@@ -144,7 +142,8 @@ class BayesianLinearRegression:
         :return: the predictions for X
         """
         # <your code here>
-        y_pred = self.basis_functions(X) @ self.posterior
+        posterior_sample = np.random.multivariate_normal(self.posterior_mean, self.posterior_cov)
+        y_pred = self.basis_functions(X) @ posterior_sample
         return y_pred
 
 
@@ -225,7 +224,7 @@ def main():
                    loc='upper left',
                    fontsize=8)
         plt.plot(test_hours, pred, lw=2, color="black")
-        plt.title(f'Temperatures on Second Half of November 16 2020\n d={d}, ASE={ase}')
+        plt.title(f'Temperatures on Second Half of November 16 2020\n d={d}, ASE={ase:.2f}')
         plt.xlabel('hour')
         plt.ylabel('temperature [C]')
         plt.show()
@@ -245,7 +244,7 @@ def main():
     # sets of centers S_1, S_2, and S_3
     centers = [np.array([6, 12, 18]),
                np.array([4, 8, 12, 16, 20]),
-               np.array([3, 6, 9, 12, 15, 18, 21])]
+               np.array([2, 4, 8, 12, 16, 20, 22])]
 
     # sets of knots K_1, K_2 and K_3 for the regression splines
     knots = [np.array([12]),
@@ -256,15 +255,24 @@ def main():
     for deg in degrees:
         pbf = polynomial_basis_functions(deg)
         mu, cov = learn_prior(hours, temps, pbf)
-
         blr = BayesianLinearRegression(mu, cov, sigma, pbf)
 
         # plot prior graphs
         # <your code here>
+
+        # find mean function
+        H = pbf(x)
+        mean = H @ mu
+        std = np.sqrt(np.diagonal(H@cov@H.T) + sigma)
+
         plt.figure()
-        for i in range(temps.shape[0]):
-            plt.plot(hours, temps[i, :], lw=2)
-        # plt.plot(hours, mu, lw=2, legend='mean')
+        plt.fill_between(x, mean - std, mean + std, alpha=.5, label='confidence interval')
+        for i in range(5):
+            prior_sample = np.random.multivariate_normal(mu, cov)
+            plt.plot(x, H@prior_sample, lw=2)
+
+        plt.plot(x, mean, lw=2, label='prior mean')
+        plt.legend()
         plt.title('Daily Average Temperatures in November')
         plt.xlabel('hour')
         plt.ylabel('temperature [C]')
@@ -272,20 +280,52 @@ def main():
 
         # plot posterior graphs
         # <your code here>
+        # TODO: This is Q6. The confidence intervals are not right. FIX!
+        blr.fit(train_hours, train)
+
+        # print average squared error performance
+        mmse_pred = blr.predict(test_hours)
+        std_pred = blr.predict_std(test_hours)
+        ase = np.mean((test - mmse_pred) ** 2)
+        print(f'Average squared error with LR and d={deg} is {ase:.2f}')
+
+        plt.figure()
+        tr = plt.scatter(train_hours, train)
+        ts = plt.scatter(test_hours, test)
+
+        plt.fill_between(test_hours, mmse_pred - std_pred, mmse_pred - std_pred,
+                         alpha=.5, label='confidence interval')
+        for i in range(5):
+            posterior_sample = blr.posterior_sample(test_hours)
+            plt.plot(test_hours, posterior_sample, lw=2)
+
+        plt.legend((tr, ts),
+                   ('train', 'test'),
+                   loc='upper left',
+                   fontsize=8)
+        plt.plot(test_hours, mmse_pred, lw=2, color="black", label="mmse mean")
+        plt.legend()
+        plt.title(f'Temperatures on Second Half of November 16 2020\n d={deg}, ASE={ase:.2f}')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
 
     # # ---------------------- Gaussian basis functions
-    # for ind, c in enumerate(centers):
-    #     rbf = gaussian_basis_functions(c, beta)
-    #     mu, cov = learn_prior(hours, temps, rbf)
-    #
-    #     blr = BayesianLinearRegression(mu, cov, sigma, rbf)
-    #
-    #     # plot prior graphs
-    #     # <your code here>
-    #
-    #     # plot posterior graphs
-    #     # <your code here>
-    #
+    for ind, c in enumerate(centers):
+        rbf = gaussian_basis_functions(c, beta)
+        mu, cov = learn_prior(hours, temps, rbf)
+        H = rbf(x)
+        print(H)
+
+
+        blr = BayesianLinearRegression(mu, cov, sigma, rbf)
+
+        # plot prior graphs
+        # <your code here>
+
+        # plot posterior graphs
+        # <your code here>
+
     # # ---------------------- cubic regression splines
     # for ind, k in enumerate(knots):
     #     spline = spline_basis_functions(k)
