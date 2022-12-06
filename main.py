@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from typing import Callable
+from copy import deepcopy
 
 
 def polynomial_basis_functions(degree: int) -> Callable:
@@ -11,7 +12,6 @@ def polynomial_basis_functions(degree: int) -> Callable:
              polynomial basis functions, a numpy array of shape [N, degree+1]
     """
     def pbf(x: np.ndarray):
-        # <your code here>
         return np.vander(x/degree, degree+1, increasing=True)
     return pbf
 
@@ -39,8 +39,9 @@ def spline_basis_functions(knots: np.ndarray) -> Callable:
              cubic regression spline basis functions, a numpy array of shape [N, len(knots)+4]
     """
     def csbf(x: np.ndarray):
-        # <your code here>
-        return None
+        vonder_3_deg = np.vander(x, 4, increasing=True)
+        H = np.concatenate([np.maximum(x[:, None] - k, 0)**3 for k in knots], axis=1)
+        return np.concatenate((vonder_3_deg, H), axis=1)
     return csbf
 
 
@@ -58,7 +59,6 @@ def learn_prior(hours: np.ndarray, temps: np.ndarray, basis_func: Callable) -> t
     # iterate over all past years
     for i, t in enumerate(temps):
         ln = LinearRegression(basis_func).fit(hours, t)
-        # todo <your code here>'
         thetas.append(ln.estimators)  # append learned parameters here
 
     thetas = np.array(thetas)
@@ -79,7 +79,6 @@ class BayesianLinearRegression:
         :param sig:                 the signal noise to use when fitting the model
         :param basis_functions:     a function that receives data points as inputs and returns a design matrix
         """
-        # <your code here>
         self.theta_mean = theta_mean
         self.theta_cov = theta_cov
         self.sig = sig
@@ -95,7 +94,6 @@ class BayesianLinearRegression:
         :param y: the true regression values for the samples X
         :return: the fitted model
         """
-        # <your code here>
         H = self.basis_functions(X)
         M = self.sig * np.identity(y.shape[0]) + H @ self.theta_cov @ H.T
         term = self.theta_cov @ H.T @ np.linalg.inv(M)
@@ -130,7 +128,6 @@ class BayesianLinearRegression:
         :param X: the samples around which to calculate the standard deviation
         :return: a numpy array with the standard deviations (same shape as X)
         """
-        # <your code here>
         H = self.basis_functions(X)
         std_pred = np.sqrt(np.diagonal(H @ self.posterior_cov @ H.T) + self.sig)
         return std_pred
@@ -141,7 +138,6 @@ class BayesianLinearRegression:
         :param X: the samples to predict
         :return: the predictions for X
         """
-        # <your code here>
         posterior_sample = np.random.multivariate_normal(self.posterior_mean, self.posterior_cov)
         y_pred = self.basis_functions(X) @ posterior_sample
         return y_pred
@@ -154,10 +150,8 @@ class LinearRegression:
         Initializes a linear regression model
         :param basis_functions:     a function that receives data points as inputs and returns a design matrix
         """
-        # <your code here>
         self.basis_functions = basis_functions
         self.estimators = None
-        pass
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'LinearRegression':
         """
@@ -166,7 +160,6 @@ class LinearRegression:
         :param y: the true regression values for the samples X
         :return: the fitted model
         """
-        # <your code here>
         H = self.basis_functions(X)
         H_dagger = np.linalg.pinv(H)
         self.estimators = H_dagger @ y
@@ -178,7 +171,6 @@ class LinearRegression:
         :param X: the samples to predict
         :return: the predictions for X
         """
-        # <your code here>
         y_pred = self.basis_functions(X) @ self.estimators
         return y_pred
 
@@ -215,7 +207,6 @@ def main():
         print(f'Average squared error with LR and d={d} is {ase:.2f}')
 
         # plot graphs for linear regression part
-        # <your code here>
         plt.figure()
         tr = plt.scatter(train_hours, train)
         ts = plt.scatter(test_hours, test)
@@ -230,7 +221,6 @@ def main():
         plt.show()
 
     # ----------------------------------------- Bayesian Linear Regression
-
     # load the historic data
     temps = np.load('jerus_daytemps.npy').astype(np.float64)
     hours = np.array([2, 5, 8, 11, 14, 17, 20, 23]).astype(np.float64)
@@ -239,7 +229,7 @@ def main():
     # setup the model parameters
     sigma = 0.25
     degrees = [3, 7]  # polynomial basis functions degrees
-    beta = 2.5  # lengthscale for Gaussian basis functions
+    beta = 3  # lengthscale for Gaussian basis functions
 
     # sets of centers S_1, S_2, and S_3
     centers = [np.array([6, 12, 18]),
@@ -258,7 +248,6 @@ def main():
         blr = BayesianLinearRegression(mu, cov, sigma, pbf)
 
         # plot prior graphs
-        # <your code here>
 
         # find mean function
         H = pbf(x)
@@ -279,31 +268,25 @@ def main():
         plt.show()
 
         # plot posterior graphs
-        # <your code here>
-        # TODO: This is Q6. The confidence intervals are not right. FIX!
         blr.fit(train_hours, train)
 
         # print average squared error performance
         mmse_pred = blr.predict(test_hours)
         std_pred = blr.predict_std(test_hours)
         ase = np.mean((test - mmse_pred) ** 2)
-        print(f'Average squared error with LR and d={deg} is {ase:.2f}')
+        print(f'Average squared error with BLR and d={deg} is {ase:.2f}')
 
         plt.figure()
         tr = plt.scatter(train_hours, train)
         ts = plt.scatter(test_hours, test)
 
-        plt.fill_between(test_hours, mmse_pred - std_pred, mmse_pred - std_pred,
+        plt.fill_between(test_hours, mmse_pred - std_pred, mmse_pred + std_pred,
                          alpha=.5, label='confidence interval')
         for i in range(5):
             posterior_sample = blr.posterior_sample(test_hours)
             plt.plot(test_hours, posterior_sample, lw=2)
 
-        plt.legend((tr, ts),
-                   ('train', 'test'),
-                   loc='upper left',
-                   fontsize=8)
-        plt.plot(test_hours, mmse_pred, lw=2, color="black", label="mmse mean")
+        plt.plot(test_hours, mmse_pred, lw=2, color="black", label="MMSE pred")
         plt.legend()
         plt.title(f'Temperatures on Second Half of November 16 2020\n d={deg}, ASE={ase:.2f}')
         plt.xlabel('hour')
@@ -311,33 +294,107 @@ def main():
         plt.show()
 
     # # ---------------------- Gaussian basis functions
+
     for ind, c in enumerate(centers):
         rbf = gaussian_basis_functions(c, beta)
         mu, cov = learn_prior(hours, temps, rbf)
-        H = rbf(x)
-        print(H)
-
 
         blr = BayesianLinearRegression(mu, cov, sigma, rbf)
 
         # plot prior graphs
-        # <your code here>
+        H = rbf(x)
+        mean = H @ mu
+        std = np.sqrt(np.diagonal(H @ cov @ H.T) + sigma)
+
+        plt.figure()
+        plt.fill_between(x, mean - std, mean + std, alpha=.5, label='confidence interval')
+        for i in range(5):
+            prior_sample = np.random.multivariate_normal(mu, cov)
+            plt.plot(x, H @ prior_sample, lw=2)
+
+        plt.plot(x, mean, lw=2, label='prior mean')
+        plt.legend()
+        plt.title('Daily Average Temperatures in November')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
 
         # plot posterior graphs
-        # <your code here>
+        blr.fit(train_hours, train)
 
-    # # ---------------------- cubic regression splines
-    # for ind, k in enumerate(knots):
-    #     spline = spline_basis_functions(k)
-    #     mu, cov = learn_prior(hours, temps, spline)
-    #
-    #     blr = BayesianLinearRegression(mu, cov, sigma, spline)
-    #
-    #     # plot prior graphs
-    #     # <your code here>
-    #
-    #     # plot posterior graphs
-    #     # <your code here>
+        # print average squared error performance
+        mmse_pred = blr.predict(test_hours)
+        std_pred = blr.predict_std(test_hours)
+        ase = np.mean((test - mmse_pred) ** 2)
+        print(f'Average squared error with BLR and center=S{ind+1} is {ase:.2f}')
+
+        plt.figure()
+        tr = plt.scatter(train_hours, train)
+        ts = plt.scatter(test_hours, test)
+
+        plt.fill_between(test_hours, mmse_pred - std_pred, mmse_pred + std_pred,
+                         alpha=.5, label='confidence interval')
+        for i in range(5):
+            posterior_sample = blr.posterior_sample(test_hours)
+            plt.plot(test_hours, posterior_sample, lw=2)
+
+        plt.plot(test_hours, mmse_pred, lw=2, color="black", label="MMSE pred")
+        plt.legend()
+        plt.title(f'Temperatures on Second Half of November 16 2020\n center=S{ind+1}, ASE={ase:.2f}')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
+
+    # ---------------------- cubic regression splines
+    for ind, k in enumerate(knots):
+        csbf = spline_basis_functions(k)
+        mu, cov = learn_prior(hours, temps, csbf)
+
+        blr = BayesianLinearRegression(mu, cov, sigma, csbf)
+
+        # plot prior graphs
+        H = csbf(x)
+        mean = H @ mu
+        std = np.sqrt(np.diagonal(H @ cov @ H.T) + sigma)
+
+        plt.figure()
+        plt.fill_between(x, mean - std, mean + std, alpha=.5, label='confidence interval')
+        for i in range(5):
+            prior_sample = np.random.multivariate_normal(mu, cov)
+            plt.plot(x, H @ prior_sample, lw=2)
+
+        plt.plot(x, mean, lw=2, label='prior mean')
+        plt.legend()
+        plt.title('Daily Average Temperatures in November')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
+
+        # plot posterior graphs
+        blr.fit(train_hours, train)
+
+        # print average squared error performance
+        mmse_pred = blr.predict(test_hours)
+        std_pred = blr.predict_std(test_hours)
+        ase = np.mean((test - mmse_pred) ** 2)
+        print(f'Average squared error with BLR and knot=K{ind + 1} is {ase:.2f}')
+
+        plt.figure()
+        tr = plt.scatter(train_hours, train)
+        ts = plt.scatter(test_hours, test)
+
+        plt.fill_between(test_hours, mmse_pred - std_pred, mmse_pred + std_pred,
+                         alpha=.5, label='confidence interval')
+        for i in range(5):
+            posterior_sample = blr.posterior_sample(test_hours)
+            plt.plot(test_hours, posterior_sample, lw=2)
+
+        plt.plot(test_hours, mmse_pred, lw=2, color="black", label="MMSE pred")
+        plt.legend()
+        plt.title(f'Temperatures on Second Half of November 16 2020\n knot=K{ind + 1}, ASE={ase:.2f}')
+        plt.xlabel('hour')
+        plt.ylabel('temperature [C]')
+        plt.show()
 
 
 if __name__ == '__main__':
